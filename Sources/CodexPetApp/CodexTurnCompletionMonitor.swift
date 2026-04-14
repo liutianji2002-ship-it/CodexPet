@@ -34,10 +34,10 @@ final class CodexTurnCompletionMonitor {
     }
 
     func stop() {
-        queue.sync {
-            timer?.cancel()
-            timer = nil
-            closeActiveFile()
+        queue.async { [self] in
+            self.timer?.cancel()
+            self.timer = nil
+            self.closeActiveFile()
         }
     }
 

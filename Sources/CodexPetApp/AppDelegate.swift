@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var unreadCountObserver: AnyCancellable?
     private var codexActivationObserver: NSObjectProtocol?
+    private var latestUnreadSnapshot: CodexUnreadSidebarSnapshot?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -57,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         unreadMonitor.onSnapshotChange = { [weak self] snapshot in
             Task { @MainActor [weak self] in
+                self?.latestUnreadSnapshot = snapshot
                 self?.viewModel.syncUnreadSnapshot(snapshot, source: "AX")
             }
         }
@@ -108,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleCompletionEvent(_ event: CodexTurnCompletionEvent) {
-        let snapshot = unreadMonitor?.currentSnapshot()
+        let snapshot = latestUnreadSnapshot
         let activeDisplayText = snapshot?.activeThreadDisplayText
         let shouldAddFocusedThreadBonus =
             (snapshot?.isActiveThreadUnread == false)

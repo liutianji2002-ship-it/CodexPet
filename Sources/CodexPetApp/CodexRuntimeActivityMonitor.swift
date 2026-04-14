@@ -40,9 +40,9 @@ final class CodexRuntimeActivityMonitor {
     }
 
     func stop() {
-        queue.sync {
-            timer?.cancel()
-            timer = nil
+        queue.async { [self] in
+            self.timer?.cancel()
+            self.timer = nil
         }
     }
 

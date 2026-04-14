@@ -16,6 +16,7 @@ final class CodexAppServerMonitor: NSObject, URLSessionWebSocketDelegate {
 
     private let serverURL = URL(string: "ws://127.0.0.1:7898")!
     private let queue = DispatchQueue(label: "CodexPet.direct-monitor")
+    private let threadDisplayTextsLock = NSLock()
 
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -46,33 +47,35 @@ final class CodexAppServerMonitor: NSObject, URLSessionWebSocketDelegate {
     }
 
     func stop() {
-        queue.sync {
-            isStopped = true
-            reconnectWorkItem?.cancel()
-            reconnectWorkItem = nil
-            stopPolling()
-            pendingRequests.removeAll()
-            threadDisplayTexts.removeAll()
-            threadSnapshots.removeAll()
-            runningThreadIDs.removeAll()
-            lastActiveThreadCount = nil
-            webSocketTask?.cancel(with: .goingAway, reason: nil)
-            webSocketTask = nil
-            session.invalidateAndCancel()
+        queue.async { [self] in
+            self.isStopped = true
+            self.reconnectWorkItem?.cancel()
+            self.reconnectWorkItem = nil
+            self.stopPolling()
+            self.pendingRequests.removeAll()
+            self.threadDisplayTextsLock.lock()
+            self.threadDisplayTexts.removeAll()
+            self.threadDisplayTextsLock.unlock()
+            self.threadSnapshots.removeAll()
+            self.runningThreadIDs.removeAll()
+            self.lastActiveThreadCount = nil
+            self.webSocketTask?.cancel(with: .goingAway, reason: nil)
+            self.webSocketTask = nil
+            self.session.invalidateAndCancel()
         }
     }
 
     func displayText(forThreadId threadId: String) -> String? {
-        queue.sync {
-            threadDisplayTexts[threadId]
-        }
+        threadDisplayTextsLock.lock()
+        let displayText = threadDisplayTexts[threadId]
+        threadDisplayTextsLock.unlock()
+        return displayText
     }
 
     func matchesDisplayText(forThreadId threadId: String, against candidate: String?) -> Bool {
-        queue.sync {
-            normalizedDisplayText(threadDisplayTexts[threadId]).isEmpty == false
-                && normalizedDisplayText(threadDisplayTexts[threadId]) == normalizedDisplayText(candidate)
-        }
+        let displayText = displayText(forThreadId: threadId)
+        return normalizedDisplayText(displayText).isEmpty == false
+            && normalizedDisplayText(displayText) == normalizedDisplayText(candidate)
     }
 
     private func connect() {
@@ -251,7 +254,9 @@ final class CodexAppServerMonitor: NSObject, URLSessionWebSocketDelegate {
             visibleThreadIDs.insert(threadId)
             threadSnapshots[threadId] = ThreadSnapshot(statusType: statusType)
             if let displayText = displayText(from: thread) {
+                threadDisplayTextsLock.lock()
                 threadDisplayTexts[threadId] = displayText
+                threadDisplayTextsLock.unlock()
             }
 
             if statusType == "active" {
@@ -266,6 +271,9 @@ final class CodexAppServerMonitor: NSObject, URLSessionWebSocketDelegate {
             return snapshot.statusType == "active" || snapshot.statusType == "inProgress"
         }
         threadSnapshots = threadSnapshots.filter { visibleThreadIDs.contains($0.key) }
+        threadDisplayTextsLock.lock()
+        threadDisplayTexts = threadDisplayTexts.filter { visibleThreadIDs.contains($0.key) }
+        threadDisplayTextsLock.unlock()
     }
 
     private func startPolling() {

@@ -35,15 +35,9 @@ final class CodexUnreadCountMonitor {
     }
 
     func stop() {
-        queue.sync {
-            timer?.cancel()
-            timer = nil
-        }
-    }
-
-    func currentSnapshot() -> CodexUnreadSidebarSnapshot? {
-        queue.sync {
-            lastSnapshot
+        queue.async { [self] in
+            self.timer?.cancel()
+            self.timer = nil
         }
     }
 
