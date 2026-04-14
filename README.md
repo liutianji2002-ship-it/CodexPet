@@ -1,87 +1,102 @@
 # CodexPet
 
-一个 macOS 桌面宠物，用来盯着 Codex 的线程状态。
+CodexPet is a macOS desktop pet that watches Codex for you.
 
-它常驻桌面右上角，保持最高层级显示，能直观看到两类信息：
+It stays above your desktop, shows unread completed threads, reacts when any thread is running, and lets you jump back into Codex with one click.
 
-- 未读完成线程数
-- 正在运行的线程数
+## What it does
 
-点击宠物可以直接跳回 Codex，右键可以打开样式面板，切换不同宠物造型、配色和表情。
+- Shows how many Codex threads have finished but are still unread
+- Detects running threads and switches the pet into a working state
+- Pops lightweight completion feedback when a task finishes
+- Stays always-on-top so you do not have to keep checking Codex manually
+- Supports multiple pet styles, palettes, and expressions
+- Can be launched from Launchpad like a normal `.app`
 
-## 现在能做什么
+## Why I built it
 
-- 监控 Codex 左侧线程列表里的未读蓝点
-- 识别线程列表里的运行中转圈状态
-- 在当前线程完成时做提示和庆祝动画
-- 支持桌面常驻、点击唤起 Codex、启动台启动
-- 支持多套宠物风格切换
+Codex is great at running work in the background, but the feedback loop is still window-bound: you usually need to switch back to the app to see whether something finished.
 
-## 设计目标
+I wanted a calmer interface:
 
-我想要的不是一个“系统托盘数字”，而是一个更直觉的状态代理：
+- if a thread is still running, the pet looks busy
+- if a thread is done and unread, the count stays visible
+- if everything is quiet, it gets out of the way
 
-- 有线程在跑，宠物就进入工作态
-- 有完成但没看的线程，宠物就把数字挂出来
-- 不需要一直盯着 Codex 窗口，也能知道有没有新结果
+The goal is not to add another dashboard. The goal is to turn Codex thread state into ambient desktop feedback.
 
-## 实现方式
+## How it works
 
-这个项目目前主要依赖三条信息源：
+CodexPet combines several local signals and merges them into one UI snapshot.
 
-1. macOS Accessibility API  
-   直接读取 Codex 窗口和线程列表，识别蓝点、运行中状态和当前活跃线程。
+### 1. Accessibility inspection
 
-2. 本地 Codex 状态文件  
-   读取 `~/.codex` 下的状态和事件文件，用来补充线程运行态判断。
+It reads the Codex window through the macOS Accessibility API to inspect:
 
-3. Codex 日志 / 直连事件源  
-   用来捕获线程完成事件，触发提示和庆祝动画。
+- unread blue-dot markers in the sidebar
+- running spinners in the thread list
+- the currently active thread
 
-这三条信号会被合并成一个统一快照，再驱动宠物 UI。
+### 2. Local Codex state
 
-## 运行要求
+It reads local Codex state files under `~/.codex` to improve running-thread detection when the UI alone is not enough.
 
-- macOS 13+
-- 已安装 Codex 桌面应用
-- 给 `CodexPet.app` 开启辅助功能权限
+### 3. Logs and direct events
 
-没有辅助功能权限时，宠物无法稳定读取 Codex 左侧线程列表。
+It tails Codex-related logs and direct event sources to capture task completion and trigger pet reactions.
 
-## 本地启动
+These signals are reconciled into a single status model, which then drives the pet bubble, counters, and animation state.
+
+## Requirements
+
+- macOS 13 or later
+- Codex desktop app installed
+- Accessibility permission granted to `CodexPet.app`
+
+Without Accessibility permission, CodexPet cannot reliably inspect the Codex sidebar.
+
+## Run locally
 
 ```bash
-cd CodexPet
 swift build
 zsh Scripts/build-app.sh
 open dist/CodexPet.app
 ```
 
-安装到启动台：
+Install into Launchpad:
 
 ```bash
 zsh Scripts/install-to-launchpad.sh
 ```
 
-## 项目结构
+## Project structure
 
 ```text
 CodexPet/
-├── AppBundle/       # App 图标与 Info.plist
-├── LaunchAgents/    # 开机自启 plist
-├── Scripts/         # 构建、安装、图标生成脚本
-├── Sources/         # SwiftUI / 监控逻辑 / 状态聚合
+├── AppBundle/       # App icon, bundle metadata
+├── LaunchAgents/    # Optional launch-on-login support
+├── Scripts/         # Build and installation scripts
+├── Sources/         # SwiftUI app, monitors, state aggregation
 └── Package.swift
 ```
 
-## 已知限制
+## Current focus
 
-- 线程状态识别依赖 Codex 当前版本的界面结构，Codex UI 大改后可能需要跟着调。
-- 运行中线程数来自多信号合并，不同 Codex 版本下需要继续校准。
-- 目前是面向我自己的 Codex 使用方式做的优化，不保证所有桌面布局都完全一致。
+This project is optimized around one practical question: can a small always-on-top companion make Codex feel more alive and less interrupt-driven?
 
-## Why this exists
+That means most of the implementation effort goes into:
 
-Codex 很强，但如果任务在后台跑，你还是要经常切回去看一眼。
+- accurate unread detection
+- stable running-state detection
+- low-noise UI feedback
+- a pet that feels expressive without becoming distracting
 
-这个项目的目标很简单：把“线程有没有跑完、有没有新结果、现在是不是还在工作”变成一个常驻、低打扰、可感知的桌面反馈。
+## Known limitations
+
+- Detection depends partly on Codex UI structure, so large upstream UI changes may break parts of the monitor.
+- Running-thread inference still combines multiple heuristics and may need recalibration across Codex versions.
+- The app is currently optimized around my own Codex workflow and desktop layout.
+
+## Notes
+
+This is an unofficial companion project for the Codex desktop workflow, not an official OpenAI app.
