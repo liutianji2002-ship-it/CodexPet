@@ -4,6 +4,20 @@ CodexPet is a macOS desktop pet that watches Codex for you.
 
 It stays above your desktop, shows unread completed threads, reacts when any thread is running, and lets you jump back into Codex with one click.
 
+## Screenshots
+
+### Running state
+
+![CodexPet running state](./hero.png)
+
+The pet switches into a visible working state when Codex has active threads, while still keeping unread counters lightweight and ambient.
+
+### Style panel
+
+![CodexPet style panel](./styles.png)
+
+You can switch the mascot, palette, and overall vibe from the built-in style panel.
+
 ## What it does
 
 - Shows how many Codex threads have finished but are still unread
