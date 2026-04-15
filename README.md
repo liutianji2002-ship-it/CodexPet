@@ -2,7 +2,7 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-CodexPet is a macOS desktop pet that watches Codex for you.
+CodexPet is a macOS desktop pet that watches Codex APP for you.
 
 It stays above your desktop, shows unread completed threads, reacts when any thread is running, and lets you jump back into Codex with one click.
 
