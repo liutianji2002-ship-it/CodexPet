@@ -15,22 +15,21 @@ final class CodexUnreadCountMonitor {
 
     private let codexBundleIdentifier = "com.openai.codex"
     private let queue = DispatchQueue(label: "CodexPet.unread-count-monitor")
+    private let foregroundPollingInterval: DispatchTimeInterval = .milliseconds(800)
+    private let backgroundPollingInterval: DispatchTimeInterval = .seconds(2)
+    private let lowerSnapshotDebounceSeconds: TimeInterval = 2
 
     private var timer: DispatchSourceTimer?
     private var lastSnapshot: CodexUnreadSidebarSnapshot?
     private var lastStatus: String?
+    private var isCodexFrontmost = false
+    private var pendingLowerSnapshot: CodexUnreadSidebarSnapshot?
+    private var pendingLowerSnapshotObservedAt: Date?
 
     func start() {
         queue.async { [weak self] in
             guard let self, self.timer == nil else { return }
-
-            let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now(), repeating: .seconds(2))
-            timer.setEventHandler { [weak self] in
-                self?.poll()
-            }
-            self.timer = timer
-            timer.resume()
+            self.startTimer(immediate: true)
         }
     }
 
@@ -45,6 +44,39 @@ final class CodexUnreadCountMonitor {
         queue.async { [weak self] in
             self?.poll()
         }
+    }
+
+    func updateCodexFrontmost(_ isFrontmost: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.isCodexFrontmost != isFrontmost else { return }
+
+            self.isCodexFrontmost = isFrontmost
+            self.restartTimer(immediate: true)
+        }
+    }
+
+    private func startTimer(immediate: Bool) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(
+            deadline: immediate ? .now() : .now() + pollingInterval,
+            repeating: pollingInterval
+        )
+        timer.setEventHandler { [weak self] in
+            self?.poll()
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    private func restartTimer(immediate: Bool) {
+        timer?.cancel()
+        timer = nil
+        startTimer(immediate: immediate)
+    }
+
+    private var pollingInterval: DispatchTimeInterval {
+        isCodexFrontmost ? foregroundPollingInterval : backgroundPollingInterval
     }
 
     private func poll() {
@@ -338,8 +370,38 @@ final class CodexUnreadCountMonitor {
     }
 
     private func publishSnapshot(_ snapshot: CodexUnreadSidebarSnapshot) {
-        guard snapshot != lastSnapshot else { return }
-        lastSnapshot = snapshot
+        guard let lastSnapshot else {
+            clearPendingLowerSnapshot()
+            self.lastSnapshot = snapshot
+            onSnapshotChange?(snapshot)
+            return
+        }
+
+        guard snapshot != lastSnapshot else {
+            clearPendingLowerSnapshot()
+            return
+        }
+
+        if shouldPublishImmediately(snapshot, comparedTo: lastSnapshot) {
+            clearPendingLowerSnapshot()
+            self.lastSnapshot = snapshot
+            onSnapshotChange?(snapshot)
+            return
+        }
+
+        if pendingLowerSnapshot != snapshot {
+            pendingLowerSnapshot = snapshot
+            pendingLowerSnapshotObservedAt = .now
+            return
+        }
+
+        let observedDuration = Date().timeIntervalSince(pendingLowerSnapshotObservedAt ?? .now)
+        guard observedDuration >= lowerSnapshotDebounceSeconds else {
+            return
+        }
+
+        clearPendingLowerSnapshot()
+        self.lastSnapshot = snapshot
         onSnapshotChange?(snapshot)
     }
 
@@ -347,5 +409,33 @@ final class CodexUnreadCountMonitor {
         guard status != lastStatus else { return }
         lastStatus = status
         onStatusChange?(status)
+    }
+
+    private func shouldPublishImmediately(
+        _ snapshot: CodexUnreadSidebarSnapshot,
+        comparedTo lastSnapshot: CodexUnreadSidebarSnapshot
+    ) -> Bool {
+        if snapshot.unreadCount > lastSnapshot.unreadCount {
+            return true
+        }
+
+        if snapshot.runningThreadCount > lastSnapshot.runningThreadCount {
+            return true
+        }
+
+        if snapshot.activeThreadDisplayText != lastSnapshot.activeThreadDisplayText {
+            return true
+        }
+
+        if snapshot.isActiveThreadUnread != lastSnapshot.isActiveThreadUnread {
+            return true
+        }
+
+        return false
+    }
+
+    private func clearPendingLowerSnapshot() {
+        pendingLowerSnapshot = nil
+        pendingLowerSnapshotObservedAt = nil
     }
 }

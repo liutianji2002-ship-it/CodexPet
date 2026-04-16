@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var unreadCountObserver: AnyCancellable?
     private var codexActivationObserver: NSObjectProtocol?
+    private var accessibilityTrustTimer: Timer?
     private var latestUnreadSnapshot: CodexUnreadSidebarSnapshot?
     private var isCodexFrontmost = false
     private var seenCompletionTurnIDs = Set<String>()
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         accessibilityPermissionManager.requestIfNeeded()
+        syncAccessibilityTrustState()
         syncCodexFrontmostState()
 
         let petWindowController = PetWindowController(viewModel: viewModel, appearanceStore: appearanceStore)
@@ -36,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureStatusItem()
         bindUnreadCount()
         observeCodexFocus()
+        startAccessibilityTrustPolling()
         startMonitoring()
         scheduleAccessibilityDump()
     }
@@ -46,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logMonitor?.stop()
         runtimeActivityMonitor?.stop()
         threadTitleResolver.stop()
+        accessibilityTrustTimer?.invalidate()
+        accessibilityTrustTimer = nil
         if let codexActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(codexActivationObserver)
         }
@@ -66,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.viewModel.syncUnreadSnapshot(snapshot, source: "AX")
             }
         }
+        unreadMonitor.updateCodexFrontmost(isCodexFrontmost)
 
         let directMonitor = CodexAppServerMonitor()
         directMonitor.onStatusChange = { [weak self] status in
@@ -76,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         directMonitor.onActiveThreadCountChange = { [weak self] count in
             Task { @MainActor [weak self] in
                 self?.viewModel.updateDirectActiveThreadCount(count)
+                self?.unreadMonitor?.requestRefresh()
             }
         }
         directMonitor.onEvent = { [weak self] event in
@@ -246,7 +253,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isCodexFrontmost = isCodexFrontmost
+                self.syncAccessibilityTrustState()
                 self.viewModel.updateCodexFrontmost(isCodexFrontmost)
+                self.unreadMonitor?.updateCodexFrontmost(isCodexFrontmost)
 
                 if isCodexFrontmost {
                     self.viewModel.clearFocusedThreadCompletionBonus()
@@ -260,6 +269,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let isCodexFrontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.openai.codex"
         self.isCodexFrontmost = isCodexFrontmost
         viewModel.updateCodexFrontmost(isCodexFrontmost)
+        unreadMonitor?.updateCodexFrontmost(isCodexFrontmost)
+    }
+
+    private func startAccessibilityTrustPolling() {
+        accessibilityTrustTimer?.invalidate()
+        accessibilityTrustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.syncAccessibilityTrustState()
+            }
+        }
+        RunLoop.main.add(accessibilityTrustTimer!, forMode: .common)
+    }
+
+    private func syncAccessibilityTrustState() {
+        viewModel.updateAccessibilityTrust(accessibilityPermissionManager.isTrusted)
     }
 
     private func markCompletionEventIfNeeded(_ turnId: String) -> Bool {

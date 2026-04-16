@@ -17,6 +17,10 @@ final class PetViewModel: ObservableObject {
         snapshot.isDirectMonitorActive
     }
 
+    var isAccessibilityTrusted: Bool {
+        snapshot.isAccessibilityTrusted
+    }
+
     var isLogMonitorActive: Bool {
         snapshot.isLogMonitorActive
     }
@@ -60,6 +64,12 @@ final class PetViewModel: ObservableObject {
     func updateUnreadSyncStatus(_ status: String) {
         mutateSnapshot {
             $0.unreadSyncStatus = status
+        }
+    }
+
+    func updateAccessibilityTrust(_ isTrusted: Bool) {
+        mutateSnapshot {
+            $0.isAccessibilityTrusted = isTrusted
         }
     }
 

@@ -25,7 +25,7 @@ struct PetView: View {
     private var bubble: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 3) {
-                StatusChip(title: "Direct", value: viewModel.isDirectMonitorActive ? "On" : "Off", accent: viewModel.isDirectMonitorActive ? .green : .orange)
+                StatusChip(title: "AX", value: viewModel.isAccessibilityTrusted ? "On" : "Off", accent: viewModel.isAccessibilityTrusted ? .green : .orange)
                 StatusChip(title: "Logs", value: viewModel.isLogMonitorActive ? "On" : "Off", accent: viewModel.isLogMonitorActive ? .blue : .orange)
                 Spacer(minLength: 0)
             }

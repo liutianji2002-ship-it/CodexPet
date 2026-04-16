@@ -29,6 +29,14 @@ You can switch the mascot, palette, and overall vibe from the built-in style pan
 - Supports multiple pet styles, palettes, and expressions
 - Can be launched from Launchpad like a normal `.app`
 
+## Recent changes
+
+- Replaced the old `Direct` status chip with a real `AX` chip
+- The top-left chip now reflects whether `CodexPet.app` itself still has Accessibility permission
+- Added better protection against transient sidebar under-counts so unread and running counts do not drop as aggressively on one bad sample
+- Tightened foreground refresh behavior when Codex becomes active again
+- Clarified the failure mode: if `AX` is `Off`, unread counting from the sidebar is expected to be wrong because the pet cannot inspect the Codex UI
+
 ## Why I built it
 
 Codex is great at running work in the background, but the feedback loop is still window-bound: you usually need to switch back to the app to see whether something finished.
@@ -71,6 +79,18 @@ These signals are reconciled into a single status model, which then drives the p
 
 Without Accessibility permission, CodexPet cannot reliably inspect the Codex sidebar.
 
+## Scope
+
+CodexPet is built specifically for the macOS Codex desktop app workflow.
+
+It is not designed for:
+
+- Codex CLI-only usage
+- terminal-only workflows without the Codex desktop window
+- non-macOS platforms
+
+The current unread and running-state logic depends on the desktop app's sidebar and window structure, so the project should be understood as a macOS desktop companion, not a generic Codex monitor.
+
 ## Run locally
 
 ```bash
@@ -109,8 +129,10 @@ That means most of the implementation effort goes into:
 
 ## Known limitations
 
+- This project currently targets the macOS Codex desktop app only. It does not support Codex CLI as a primary integration surface.
 - Detection depends partly on Codex UI structure, so large upstream UI changes may break parts of the monitor.
 - Running-thread inference still combines multiple heuristics and may need recalibration across Codex versions.
+- Reinstalling or replacing `CodexPet.app` may cause macOS Accessibility permission to reset. When that happens, the `AX` chip will turn `Off` and sidebar-based unread detection will stop being trustworthy until permission is granted again.
 - The app is currently optimized around my own Codex workflow and desktop layout.
 
 ## Notes

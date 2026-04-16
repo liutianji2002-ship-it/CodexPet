@@ -1,6 +1,7 @@
 import Foundation
 
 struct PetStatusSnapshot: Equatable {
+    var isAccessibilityTrusted = false
     var directStatus = "Direct WS starting"
     var logStatus = "Log monitor starting"
     var unreadSyncStatus = "Unread sync starting"
