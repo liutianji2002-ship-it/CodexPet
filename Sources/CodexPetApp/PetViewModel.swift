@@ -63,6 +63,12 @@ final class PetViewModel: ObservableObject {
         }
     }
 
+    func updateCodexFrontmost(_ isFrontmost: Bool) {
+        mutateSnapshot {
+            $0.isCodexFrontmost = isFrontmost
+        }
+    }
+
     func updateDirectActiveThreadCount(_ count: Int) {
         mutateSnapshot {
             $0.directActiveThreadCount = max(0, count)
@@ -78,6 +84,7 @@ final class PetViewModel: ObservableObject {
     func syncUnreadSnapshot(_ snapshot: CodexUnreadSidebarSnapshot, source: String) {
         mutateSnapshot {
             $0.baseUnreadThreadCount = max(0, snapshot.unreadCount)
+            $0.derivedUnreadThreadCount = 0
             $0.sidebarRunningThreadCount = max(0, snapshot.runningThreadCount)
             if snapshot.isActiveThreadUnread,
                snapshot.activeThreadDisplayText == $0.focusedCompletionBonusDisplayText {
@@ -87,7 +94,12 @@ final class PetViewModel: ObservableObject {
         }
     }
 
-    func handle(event: CodexTurnCompletionEvent, shouldAddFocusedThreadBonus: Bool, focusedThreadDisplayText: String?) {
+    func handle(
+        event: CodexTurnCompletionEvent,
+        shouldAddFocusedThreadBonus: Bool,
+        shouldIncrementDerivedUnread: Bool,
+        focusedThreadDisplayText: String?
+    ) {
         guard shouldTrack(event: event) else {
             return
         }
@@ -95,6 +107,9 @@ final class PetViewModel: ObservableObject {
         mutateSnapshot {
             if shouldAddFocusedThreadBonus {
                 $0.focusedCompletionBonusDisplayText = focusedThreadDisplayText
+            }
+            if shouldIncrementDerivedUnread {
+                $0.derivedUnreadThreadCount += 1
             }
             $0.totalCompletions += 1
             $0.bubbleOverride = "Thread complete"

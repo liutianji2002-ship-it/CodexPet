@@ -18,10 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var unreadCountObserver: AnyCancellable?
     private var codexActivationObserver: NSObjectProtocol?
     private var latestUnreadSnapshot: CodexUnreadSidebarSnapshot?
+    private var isCodexFrontmost = false
+    private var seenCompletionTurnIDs = Set<String>()
+    private var seenCompletionTurnOrder: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         accessibilityPermissionManager.requestIfNeeded()
+        syncCodexFrontmostState()
 
         let petWindowController = PetWindowController(viewModel: viewModel, appearanceStore: appearanceStore)
         petWindowController.showWindow(nil)
@@ -110,17 +114,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleCompletionEvent(_ event: CodexTurnCompletionEvent) {
+        guard markCompletionEventIfNeeded(event.turnId) else {
+            return
+        }
+
         let snapshot = latestUnreadSnapshot
         let activeDisplayText = snapshot?.activeThreadDisplayText
         let shouldAddFocusedThreadBonus =
             (snapshot?.isActiveThreadUnread == false)
             && focusedThreadMatchesCompletionEvent(event.conversationId, activeDisplayText: activeDisplayText)
+        let shouldIncrementDerivedUnread = !shouldAddFocusedThreadBonus && !isCodexFrontmost
 
         viewModel.handle(
             event: event,
             shouldAddFocusedThreadBonus: shouldAddFocusedThreadBonus,
+            shouldIncrementDerivedUnread: shouldIncrementDerivedUnread,
             focusedThreadDisplayText: activeDisplayText
         )
+
+        if isCodexFrontmost {
+            unreadMonitor?.requestRefresh()
+        }
     }
 
     private func focusedThreadMatchesCompletionEvent(_ threadId: String, activeDisplayText: String?) -> Bool {
@@ -227,17 +241,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard
-                let runningApp = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                runningApp.bundleIdentifier == "com.openai.codex"
-            else {
-                return
-            }
-
+            let isCodexFrontmost = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .bundleIdentifier == "com.openai.codex"
             Task { @MainActor [weak self] in
-                self?.viewModel.clearFocusedThreadCompletionBonus()
+                guard let self else { return }
+                self.isCodexFrontmost = isCodexFrontmost
+                self.viewModel.updateCodexFrontmost(isCodexFrontmost)
+
+                if isCodexFrontmost {
+                    self.viewModel.clearFocusedThreadCompletionBonus()
+                    self.unreadMonitor?.requestRefresh()
+                }
             }
         }
+    }
+
+    private func syncCodexFrontmostState() {
+        let isCodexFrontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.openai.codex"
+        self.isCodexFrontmost = isCodexFrontmost
+        viewModel.updateCodexFrontmost(isCodexFrontmost)
+    }
+
+    private func markCompletionEventIfNeeded(_ turnId: String) -> Bool {
+        guard seenCompletionTurnIDs.insert(turnId).inserted else {
+            return false
+        }
+
+        seenCompletionTurnOrder.append(turnId)
+        while seenCompletionTurnOrder.count > 100 {
+            let removed = seenCompletionTurnOrder.removeFirst()
+            seenCompletionTurnIDs.remove(removed)
+        }
+
+        return true
     }
 
     @objc

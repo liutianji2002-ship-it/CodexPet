@@ -41,6 +41,12 @@ final class CodexUnreadCountMonitor {
         }
     }
 
+    func requestRefresh() {
+        queue.async { [weak self] in
+            self?.poll()
+        }
+    }
+
     private func poll() {
         guard AXIsProcessTrusted() else {
             publishStatus("Unread sync needs Accessibility")
@@ -99,13 +105,30 @@ final class CodexUnreadCountMonitor {
     }
 
     private func mainWindowElement(from appElement: AXUIElement) -> AXUIElement? {
-        if let focusedWindow = elementAttribute("AXFocusedWindow", from: appElement) {
-            return focusedWindow
-        }
         if let mainWindow = elementAttribute("AXMainWindow", from: appElement) {
             return mainWindow
         }
-        return childElements(for: appElement, attributes: ["AXWindows"]).first
+        if let focusedWindow = elementAttribute("AXFocusedWindow", from: appElement) {
+            return focusedWindow
+        }
+
+        let windows = childElements(for: appElement, attributes: ["AXWindows"])
+        var largestWindow: AXUIElement?
+        var largestArea: CGFloat = 0
+
+        for window in windows {
+            guard let frame = frame(from: window) else {
+                continue
+            }
+
+            let area = frame.width * frame.height
+            if area > largestArea {
+                largestArea = area
+                largestWindow = window
+            }
+        }
+
+        return largestWindow
     }
 
     private func threadRowElements(in window: AXUIElement) -> [AXUIElement] {

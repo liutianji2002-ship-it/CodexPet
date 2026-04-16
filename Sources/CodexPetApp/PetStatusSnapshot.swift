@@ -5,9 +5,11 @@ struct PetStatusSnapshot: Equatable {
     var logStatus = "Log monitor starting"
     var unreadSyncStatus = "Unread sync starting"
     var baseUnreadThreadCount = 0
+    var derivedUnreadThreadCount = 0
     var focusedCompletionBonusDisplayText: String?
     var totalCompletions = 0
     var isCelebrating = false
+    var isCodexFrontmost = false
     var directActiveThreadCount = 0
     var runtimeActiveThreadCount = 0
     var sidebarRunningThreadCount = 0
@@ -15,11 +17,11 @@ struct PetStatusSnapshot: Equatable {
     var subtitleOverride: String?
 
     var unreadThreadCount: Int {
-        baseUnreadThreadCount + focusedCompletionBonusCount
+        baseUnreadThreadCount + derivedUnreadThreadCount + focusedCompletionBonusCount
     }
 
     var combinedActiveThreadCount: Int {
-        max(runtimeActiveThreadCount, sidebarRunningThreadCount)
+        max(directActiveThreadCount, runtimeActiveThreadCount, effectiveSidebarRunningThreadCount)
     }
 
     var isDirectMonitorActive: Bool {
@@ -74,5 +76,9 @@ struct PetStatusSnapshot: Equatable {
 
     private var focusedCompletionBonusCount: Int {
         focusedCompletionBonusDisplayText == nil ? 0 : 1
+    }
+
+    private var effectiveSidebarRunningThreadCount: Int {
+        isCodexFrontmost ? sidebarRunningThreadCount : 0
     }
 }
