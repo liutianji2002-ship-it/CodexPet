@@ -40,6 +40,44 @@ final class UnreadDotVisionDetectorTests: XCTestCase {
         )
     }
 
+    func testFallsBackToSidebarScanWhenRowFramesAreUnavailable() {
+        let windowFrame = CGRect(x: 0, y: 0, width: 240, height: 160)
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(windowFrame.width),
+            pixelsHigh: Int(windowFrame.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+        let context = NSGraphicsContext(bitmapImageRep: rep)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+
+        NSColor(white: 0.96, alpha: 1).setFill()
+        NSBezierPath(rect: CGRect(x: 0, y: 0, width: windowFrame.width, height: windowFrame.height)).fill()
+
+        let blue = NSColor(calibratedRed: 81 / 255, green: 174 / 255, blue: 252 / 255, alpha: 1)
+        blue.setFill()
+        NSBezierPath(ovalIn: CGRect(x: 12, y: 45, width: 10, height: 10)).fill()
+        NSBezierPath(ovalIn: CGRect(x: 12, y: 92, width: 10, height: 10)).fill()
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        XCTAssertEqual(
+            UnreadDotVisionDetector.unreadDotCount(
+                in: rep.cgImage!,
+                rowFrames: [],
+                windowFrame: windowFrame
+            ),
+            2
+        )
+    }
+
     private func makeImage(
         windowFrame: CGRect,
         rows: [CGRect],

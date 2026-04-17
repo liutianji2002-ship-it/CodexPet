@@ -22,6 +22,13 @@ enum UnreadDotVisionDetector {
         }
         let bitmap = NSBitmapImageRep(cgImage: image)
 
+        if rowFrames.isEmpty {
+            return fallbackSidebarUnreadDotCount(
+                in: bitmap,
+                windowFrame: windowFrame
+            )
+        }
+
         return rowFrames.reduce(into: 0) { count, rowFrame in
             if hasUnreadDot(in: bitmap, rowFrame: rowFrame, windowFrame: windowFrame) {
                 count += 1
@@ -80,5 +87,84 @@ enum UnreadDotVisionDetector {
         color.redComponent < dotColorThreshold.redUpperBound
             && color.greenComponent > dotColorThreshold.greenLowerBound
             && color.blueComponent > dotColorThreshold.blueLowerBound
+    }
+
+    private static func fallbackSidebarUnreadDotCount(
+        in bitmap: NSBitmapImageRep,
+        windowFrame: CGRect
+    ) -> Int {
+        let scaleX = CGFloat(bitmap.pixelsWide) / windowFrame.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / windowFrame.height
+
+        let sampleRect = CGRect(
+            x: 6 * scaleX,
+            y: 20 * scaleY,
+            width: 28 * scaleX,
+            height: max(bitmap.pixelsHigh.cgFloatValue - (40 * scaleY), 1)
+        ).integral
+
+        let minX = max(Int(sampleRect.minX), 0)
+        let maxX = min(Int(sampleRect.maxX), bitmap.pixelsWide - 1)
+        let minTopY = max(Int(sampleRect.minY), 0)
+        let maxTopY = min(Int(sampleRect.maxY), bitmap.pixelsHigh - 1)
+
+        guard minX <= maxX, minTopY <= maxTopY else {
+            return 0
+        }
+
+        let minimumBluePixelsPerRow = max(Int((4 * scaleX).rounded(.down)), 3)
+        let minimumBandHeight = max(Int((6 * scaleY).rounded(.down)), 5)
+        let maximumBandGap = max(Int((3 * scaleY).rounded(.down)), 2)
+
+        var count = 0
+        var activeBandLength = 0
+        var emptyGapLength = 0
+
+        for topY in minTopY...maxTopY {
+            let bitmapY = bitmap.pixelsHigh - 1 - topY
+            var bluePixelsInRow = 0
+
+            for x in minX...maxX {
+                guard let color = bitmap.colorAt(x: x, y: bitmapY)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if isBlueDotColor(color) {
+                    bluePixelsInRow += 1
+                }
+            }
+
+            if bluePixelsInRow >= minimumBluePixelsPerRow {
+                activeBandLength += 1
+                emptyGapLength = 0
+                continue
+            }
+
+            guard activeBandLength > 0 else {
+                continue
+            }
+
+            emptyGapLength += 1
+            if emptyGapLength <= maximumBandGap {
+                continue
+            }
+
+            if activeBandLength >= minimumBandHeight {
+                count += 1
+            }
+            activeBandLength = 0
+            emptyGapLength = 0
+        }
+
+        if activeBandLength >= minimumBandHeight {
+            count += 1
+        }
+
+        return count
+    }
+}
+
+private extension Int {
+    var cgFloatValue: CGFloat {
+        CGFloat(self)
     }
 }

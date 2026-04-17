@@ -85,6 +85,33 @@ These signals are reconciled into a single status model, which then drives the p
 Without Accessibility permission, CodexPet cannot reliably inspect the Codex sidebar.
 Without Screen Recording permission, the new visual unread fallback cannot inspect visible blue dots and the app will fall back to AX-only heuristics.
 
+## Grant permissions
+
+CodexPet currently depends on two macOS permissions:
+
+- `Accessibility`: required for sidebar inspection, running-thread detection, and active-thread tracking
+- `Screen Recording`: required for the visual blue-dot fallback when Codex's AX tree is incomplete
+
+Grant them like this:
+
+1. Open `System Settings`
+2. Go to `Privacy & Security`
+3. Open `Accessibility`, then enable `CodexPet.app`
+4. Open `Screen Recording`, then enable `CodexPet.app`
+5. Fully quit and reopen `CodexPet.app`
+
+If `CodexPet.app` does not appear in the list yet:
+
+1. Launch `/Users/<your-user>/Applications/CodexPet.app` once
+2. If needed, remove the old disabled entry and add the current app again
+3. Reopen the permission page and enable it
+
+Important:
+
+- Replacing or reinstalling `CodexPet.app` can cause macOS to treat it as a new app for permissions
+- If the top chip shows `AX Off`, re-check the `Accessibility` page
+- If unread blue-dot counting becomes worse after an app update, re-check the `Screen Recording` page
+
 ## Scope
 
 CodexPet is built specifically for the macOS Codex desktop app workflow.

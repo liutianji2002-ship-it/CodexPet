@@ -299,21 +299,22 @@ final class CodexUnreadCountMonitor {
 
     private func hasSidebarRunningMarker(_ element: AXUIElement) -> Bool {
         let rowChildren = rowDescendants(for: element)
-        let rowMidX = frame(from: element)?.midX ?? 0
-
-        // Keep the old structural heuristic, but scan the whole row container.
-        return rowChildren.contains { candidate in
-            guard stringAttribute("AXRole", from: candidate) == "AXGroup",
-                  let candidateFrame = frame(from: candidate),
-                  candidateFrame.midX > rowMidX
-            else {
-                return false
-            }
-
-            return childElements(for: candidate).contains { child in
-                stringAttribute("AXRole", from: child) == "AXImage"
-            }
+        guard let rowFrame = frame(from: element) else {
+            return false
         }
+
+        let snapshots = rowChildren.map { child in
+            SidebarElementSnapshot(
+                role: stringAttribute("AXRole", from: child) ?? "",
+                frame: frame(from: child),
+                classList: classList(from: child)
+            )
+        }
+
+        return SidebarIndicatorHeuristics.hasRunningMarker(
+            rowFrame: rowFrame,
+            descendants: snapshots
+        )
     }
 
     private func threadDisplayText(from element: AXUIElement) -> String? {
