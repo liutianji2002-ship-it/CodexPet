@@ -49,6 +49,10 @@ final class PetViewModel: ObservableObject {
         snapshot.isCelebrating
     }
 
+    var systemResourceText: String? {
+        snapshot.systemResourceText
+    }
+
     func updateDirectStatus(_ status: String) {
         mutateSnapshot {
             $0.directStatus = status
@@ -70,6 +74,16 @@ final class PetViewModel: ObservableObject {
     func updateAccessibilityTrust(_ isTrusted: Bool) {
         mutateSnapshot {
             $0.isAccessibilityTrusted = isTrusted
+            guard !isTrusted else {
+                return
+            }
+
+            // When Accessibility permission drops, sidebar-derived unread state is no longer trustworthy.
+            // Clear cached unread-related values so the badge does not keep stale counts.
+            $0.baseUnreadThreadCount = 0
+            $0.derivedUnreadThreadCount = 0
+            $0.focusedCompletionBonusDisplayText = nil
+            $0.unreadSyncStatus = "Unread sync needs Accessibility"
         }
     }
 
@@ -91,13 +105,22 @@ final class PetViewModel: ObservableObject {
         }
     }
 
+    func updateSystemResources(_ resourceSnapshot: SystemResourceSnapshot) {
+        mutateSnapshot {
+            $0.cpuUsagePercent = max(0, resourceSnapshot.cpuUsagePercent)
+            $0.memoryUsedBytes = resourceSnapshot.memoryUsedBytes
+            $0.memoryTotalBytes = resourceSnapshot.memoryTotalBytes
+        }
+    }
+
     func syncUnreadSnapshot(_ snapshot: CodexUnreadSidebarSnapshot, source: String) {
         mutateSnapshot {
             $0.baseUnreadThreadCount = max(0, snapshot.unreadCount)
             $0.derivedUnreadThreadCount = 0
             $0.sidebarRunningThreadCount = max(0, snapshot.runningThreadCount)
-            if snapshot.isActiveThreadUnread,
-               snapshot.activeThreadDisplayText == $0.focusedCompletionBonusDisplayText {
+            if ($0.isCodexFrontmost && snapshot.unreadCount == 0)
+                || (snapshot.isActiveThreadUnread
+                    && snapshot.activeThreadDisplayText == $0.focusedCompletionBonusDisplayText) {
                 $0.focusedCompletionBonusDisplayText = nil
             }
             $0.unreadSyncStatus = source

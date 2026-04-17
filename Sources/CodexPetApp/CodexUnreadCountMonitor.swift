@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CoreGraphics
 import Foundation
 
 struct CodexUnreadSidebarSnapshot: Equatable, Sendable {
@@ -112,15 +113,17 @@ final class CodexUnreadCountMonitor {
         guard let window = mainWindowElement(from: appElement) else {
             return nil
         }
+        guard let windowFrame = frame(from: window) else {
+            return nil
+        }
 
-        var visited = Set<CFHashCode>()
-        let elements = descendantElements(from: window, depth: 0, maxDepth: 30, childLimit: 200, visited: &visited)
-        let rows = elements.filter(matchesThreadRow)
-        let unreadCount = rows.reduce(into: 0) { count, row in
+        let rows = threadRowElements(in: window)
+        let axUnreadCount = rows.reduce(into: 0) { count, row in
             if isUnreadThreadRow(row) {
                 count += 1
             }
         }
+        let unreadCount = visionUnreadCount(for: codexApp, windowFrame: windowFrame, rows: rows) ?? axUnreadCount
         let activeRow = rows.first(where: isActiveThreadRow)
         let runningThreadCount = rows.reduce(into: 0) { count, row in
             if hasSidebarRunningMarker(row) {
@@ -166,65 +169,155 @@ final class CodexUnreadCountMonitor {
     private func threadRowElements(in window: AXUIElement) -> [AXUIElement] {
         var visited = Set<CFHashCode>()
         let elements = descendantElements(from: window, depth: 0, maxDepth: 30, childLimit: 200, visited: &visited)
+        if let threadList = elements.first(where: isThreadList) {
+            let listRows = childElements(for: threadList).filter(matchesThreadRow)
+            if !listRows.isEmpty {
+                return listRows
+            }
+        }
         return elements.filter(matchesThreadRow)
     }
 
+    private func isThreadList(_ element: AXUIElement) -> Bool {
+        guard stringAttribute("AXRole", from: element) == "AXList" else {
+            return false
+        }
+
+        let description = stringAttribute("AXDescription", from: element) ?? ""
+        return description == "最近聊天" || description == "最近线程"
+    }
+
     private func matchesThreadRow(_ element: AXUIElement) -> Bool {
-        guard stringAttribute("AXRole", from: element) == "AXButton" else {
+        guard stringAttribute("AXRole", from: element) == "AXGroup" else {
             return false
         }
 
-        let title = stringAttribute("AXTitle", from: element) ?? ""
-        guard isThreadRowTitle(title) else {
+        guard let rowFrame = frame(from: element), rowFrame.width >= 180, rowFrame.height > 0 else {
             return false
         }
 
-        guard let frame = frame(from: element), frame.width >= 180, frame.height > 0 else {
-            return false
-        }
-
-        return true
+        return rowTitleButton(in: element) != nil
     }
 
     private func isUnreadThreadRow(_ element: AXUIElement) -> Bool {
-        let title = stringAttribute("AXTitle", from: element) ?? ""
+        let rowChildren = rowDescendants(for: element)
+        let rowMidX = frame(from: element)?.midX ?? 0
 
-        // Fact from the current "sort by updated time" sidebar:
-        // unread rows are still thread buttons, but their AXTitle no longer includes "Pin chat".
-        // Read rows keep "Pin chat" in the title.
-        return isThreadRowTitle(title) && !title.localizedCaseInsensitiveContains("Pin chat")
-    }
-
-    private func isActiveThreadRow(_ element: AXUIElement) -> Bool {
-        classListContains("bg-token-list-hover-background", in: element)
-    }
-
-    private func isThreadRowTitle(_ title: String) -> Bool {
-        title.hasPrefix("归档线程") || title.localizedCaseInsensitiveContains("Pin thread")
-    }
-
-    private func hasSidebarRunningMarker(_ element: AXUIElement) -> Bool {
-        let rowChildren = childElements(for: element)
-        guard rowChildren.count > 1 else {
-            return false
+        let leadingControls = rowChildren.filter { child in
+            guard let frame = frame(from: child) else {
+                return false
+            }
+            return frame.midX < rowMidX
         }
 
-        let markerContainer = rowChildren[1]
-        let markers = childElements(for: markerContainer)
+        return leadingControls.contains { child in
+            guard stringAttribute("AXRole", from: child) == "AXGroup" else {
+                return false
+            }
 
-        // Fact from the current "sort by updated time" sidebar:
-        // running rows expose an extra AXGroup in the status slot, and that group
-        // directly owns an AXImage (the spinning indicator). Plain unread rows do not.
-        return markers.contains { candidate in
-            stringAttribute("AXRole", from: candidate) == "AXGroup"
-                && childElements(for: candidate).contains { child in
-                    stringAttribute("AXRole", from: child) == "AXImage"
+            let nested = childElements(for: child)
+            return classListContains("text-token-description-foreground", in: child)
+                && nested.allSatisfy { nestedChild in
+                    let role = stringAttribute("AXRole", from: nestedChild)
+                    return role != "AXButton" && role != "AXImage"
                 }
         }
     }
 
+    private func visionUnreadCount(
+        for codexApp: NSRunningApplication,
+        windowFrame: CGRect,
+        rows: [AXUIElement]
+    ) -> Int? {
+        guard let windowID = codexWindowID(for: codexApp, windowFrame: windowFrame) else {
+            return nil
+        }
+        guard let image = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        ) else {
+            return nil
+        }
+
+        let rowFrames = rows.compactMap(frame(from:))
+        return UnreadDotVisionDetector.unreadDotCount(
+            in: image,
+            rowFrames: rowFrames,
+            windowFrame: windowFrame
+        )
+    }
+
+    private func codexWindowID(
+        for codexApp: NSRunningApplication,
+        windowFrame: CGRect
+    ) -> CGWindowID? {
+        let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+        guard let windowInfos = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+
+        let pid = Int(codexApp.processIdentifier)
+        let tolerance: CGFloat = 8
+
+        return windowInfos.first { info in
+            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int, ownerPID == pid else {
+                return false
+            }
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else {
+                return false
+            }
+
+            let cgFrame = CGRect(
+                x: bounds["X"] ?? 0,
+                y: bounds["Y"] ?? 0,
+                width: bounds["Width"] ?? 0,
+                height: bounds["Height"] ?? 0
+            )
+
+            return abs(cgFrame.origin.x - windowFrame.origin.x) <= tolerance
+                && abs(cgFrame.origin.y - windowFrame.origin.y) <= tolerance
+                && abs(cgFrame.width - windowFrame.width) <= tolerance
+                && abs(cgFrame.height - windowFrame.height) <= tolerance
+        }.flatMap { info in
+            info[kCGWindowNumber as String] as? CGWindowID
+        }
+    }
+
+    private func isActiveThreadRow(_ element: AXUIElement) -> Bool {
+        classListContains("bg-token-list-hover-background", in: element)
+            || rowDescendants(for: element).contains { classListContains("bg-token-list-hover-background", in: $0) }
+    }
+
+    private func isThreadRowTitle(_ title: String) -> Bool {
+        title.hasPrefix("归档线程")
+            || title.hasPrefix("归档聊天")
+            || title.localizedCaseInsensitiveContains("Pin thread")
+            || title.localizedCaseInsensitiveContains("Pinned chat")
+    }
+
+    private func hasSidebarRunningMarker(_ element: AXUIElement) -> Bool {
+        let rowChildren = rowDescendants(for: element)
+        let rowMidX = frame(from: element)?.midX ?? 0
+
+        // Keep the old structural heuristic, but scan the whole row container.
+        return rowChildren.contains { candidate in
+            guard stringAttribute("AXRole", from: candidate) == "AXGroup",
+                  let candidateFrame = frame(from: candidate),
+                  candidateFrame.midX > rowMidX
+            else {
+                return false
+            }
+
+            return childElements(for: candidate).contains { child in
+                stringAttribute("AXRole", from: child) == "AXImage"
+            }
+        }
+    }
+
     private func threadDisplayText(from element: AXUIElement) -> String? {
-        let rowChildren = childElements(for: element)
+        let rowChildren = rowDescendants(for: element)
         for child in rowChildren {
             guard stringAttribute("AXRole", from: child) == "AXStaticText" else {
                 continue
@@ -232,11 +325,41 @@ final class CodexUnreadCountMonitor {
 
             let text = (stringValueAttribute("AXValue", from: child) ?? stringAttribute("AXTitle", from: child) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
+            if !text.isEmpty, !looksLikeRelativeTime(text) {
                 return text
             }
         }
         return nil
+    }
+
+    private func rowTitleButton(in element: AXUIElement) -> AXUIElement? {
+        if stringAttribute("AXRole", from: element) == "AXButton" {
+            let title = stringAttribute("AXTitle", from: element) ?? ""
+            return isThreadRowTitle(title) ? element : nil
+        }
+
+        return rowDescendants(for: element).first { candidate in
+            guard stringAttribute("AXRole", from: candidate) == "AXButton" else {
+                return false
+            }
+            let title = stringAttribute("AXTitle", from: candidate) ?? ""
+            return isThreadRowTitle(title)
+        }
+    }
+
+    private func rowDescendants(for element: AXUIElement) -> [AXUIElement] {
+        var visited = Set<CFHashCode>()
+        return descendantElements(from: element, depth: 0, maxDepth: 4, childLimit: 80, visited: &visited)
+    }
+
+    private func looksLikeRelativeTime(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        let suffixes = ["分", "小时", "天", "周", "个月", "月", "刚刚", "分钟", "min", "hour", "day", "week", "month"]
+        return suffixes.contains { trimmed.hasSuffix($0) } || trimmed == "刚刚"
     }
 
     private func classListContains(_ needle: String, in element: AXUIElement) -> Bool {

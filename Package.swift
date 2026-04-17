@@ -16,6 +16,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CodexPetApp"
+        ),
+        .testTarget(
+            name: "CodexPetAppTests",
+            dependencies: ["CodexPetApp"]
         )
     ]
 )

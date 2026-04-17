@@ -34,6 +34,13 @@ struct PetView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.black.opacity(0.86))
                 .lineLimit(1)
+
+            if let systemResourceText = viewModel.systemResourceText {
+                Text(systemResourceText)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.52))
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: 152, alignment: .leading)
         .padding(.horizontal, 7)

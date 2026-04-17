@@ -5,6 +5,9 @@ struct PetStatusSnapshot: Equatable {
     var directStatus = "Direct WS starting"
     var logStatus = "Log monitor starting"
     var unreadSyncStatus = "Unread sync starting"
+    var cpuUsagePercent: Double?
+    var memoryUsedBytes: UInt64?
+    var memoryTotalBytes: UInt64?
     var baseUnreadThreadCount = 0
     var derivedUnreadThreadCount = 0
     var focusedCompletionBonusDisplayText: String?
@@ -22,7 +25,7 @@ struct PetStatusSnapshot: Equatable {
     }
 
     var combinedActiveThreadCount: Int {
-        max(directActiveThreadCount, runtimeActiveThreadCount, effectiveSidebarRunningThreadCount)
+        max(directActiveThreadCount, runtimeActiveThreadCount, sidebarRunningThreadCount)
     }
 
     var isDirectMonitorActive: Bool {
@@ -52,6 +55,23 @@ struct PetStatusSnapshot: Equatable {
         subtitleOverride ?? primaryStatusText
     }
 
+    var systemResourceText: String? {
+        guard
+            let cpuUsagePercent,
+            let memoryUsedBytes,
+            let memoryTotalBytes,
+            memoryTotalBytes > 0
+        else {
+            return nil
+        }
+
+        let cpuText = "CPU \(Int(cpuUsagePercent.rounded()))%"
+        let usedGigabytes = Double(memoryUsedBytes) / 1_073_741_824
+        let totalGigabytes = Double(memoryTotalBytes) / 1_073_741_824
+        let memoryText = String(format: "MEM %.1f/%.1fG", usedGigabytes, totalGigabytes)
+        return "\(cpuText) · \(memoryText)"
+    }
+
     var workingSummaryText: String? {
         guard isWorking else {
             return nil
@@ -77,9 +97,5 @@ struct PetStatusSnapshot: Equatable {
 
     private var focusedCompletionBonusCount: Int {
         focusedCompletionBonusDisplayText == nil ? 0 : 1
-    }
-
-    private var effectiveSidebarRunningThreadCount: Int {
-        isCodexFrontmost ? sidebarRunningThreadCount : 0
     }
 }

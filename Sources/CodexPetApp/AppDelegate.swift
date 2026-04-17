@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var directMonitor: CodexAppServerMonitor?
     private var unreadMonitor: CodexUnreadCountMonitor?
     private var runtimeActivityMonitor: CodexRuntimeActivityMonitor?
+    private var systemResourceMonitor: SystemResourceMonitor?
     private var statusItem: NSStatusItem?
     private var unreadCountObserver: AnyCancellable?
     private var codexActivationObserver: NSObjectProtocol?
@@ -48,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         directMonitor?.stop()
         logMonitor?.stop()
         runtimeActivityMonitor?.stop()
+        systemResourceMonitor?.stop()
         threadTitleResolver.stop()
         accessibilityTrustTimer?.invalidate()
         accessibilityTrustTimer = nil
@@ -110,14 +112,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        let systemResourceMonitor = SystemResourceMonitor()
+        systemResourceMonitor.onSnapshotChange = { [weak self] snapshot in
+            Task { @MainActor [weak self] in
+                self?.viewModel.updateSystemResources(snapshot)
+            }
+        }
+
         unreadMonitor.start()
         directMonitor.start()
         logMonitor.start()
         runtimeActivityMonitor.start()
+        systemResourceMonitor.start()
         self.unreadMonitor = unreadMonitor
         self.directMonitor = directMonitor
         self.logMonitor = logMonitor
         self.runtimeActivityMonitor = runtimeActivityMonitor
+        self.systemResourceMonitor = systemResourceMonitor
     }
 
     private func handleCompletionEvent(_ event: CodexTurnCompletionEvent) {

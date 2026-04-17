@@ -25,17 +25,17 @@ You can switch the mascot, palette, and overall vibe from the built-in style pan
 - Shows how many Codex threads have finished but are still unread
 - Detects running threads and switches the pet into a working state
 - Pops lightweight completion feedback when a task finishes
+- Shows lightweight system stats in the bubble, including CPU usage and memory used/total
 - Stays always-on-top so you do not have to keep checking Codex manually
 - Supports multiple pet styles, palettes, and expressions
 - Can be launched from Launchpad like a normal `.app`
 
 ## Recent changes
 
-- Replaced the old `Direct` status chip with a real `AX` chip
-- The top-left chip now reflects whether `CodexPet.app` itself still has Accessibility permission
-- Added better protection against transient sidebar under-counts so unread and running counts do not drop as aggressively on one bad sample
-- Tightened foreground refresh behavior when Codex becomes active again
-- Clarified the failure mode: if `AX` is `Off`, unread counting from the sidebar is expected to be wrong because the pet cannot inspect the Codex UI
+- Added a vision-based unread-dot fallback so unread counting can follow visible blue dots more closely when the latest Codex AX structure is not enough
+- Tightened the foreground cleanup path so completion bonus badges do not linger after the active Codex thread has no unread marker
+- Added a compact resource line in the bubble: CPU usage plus memory used/total
+- Clarified the new permission model: unread detection is most accurate when `CodexPet.app` has both Accessibility and Screen Recording permission
 
 ## Why I built it
 
@@ -61,6 +61,10 @@ It reads the Codex window through the macOS Accessibility API to inspect:
 - running spinners in the thread list
 - the currently active thread
 
+### 1.5. Visual unread fallback
+
+When Codex's latest AX tree no longer exposes unread state clearly enough, CodexPet can also sample the actual sidebar pixels and count visible blue dots directly from the window image.
+
 ### 2. Local Codex state
 
 It reads local Codex state files under `~/.codex` to improve running-thread detection when the UI alone is not enough.
@@ -76,8 +80,10 @@ These signals are reconciled into a single status model, which then drives the p
 - macOS 13 or later
 - Codex desktop app installed
 - Accessibility permission granted to `CodexPet.app`
+- Screen Recording permission granted to `CodexPet.app` for the most accurate unread blue-dot detection
 
 Without Accessibility permission, CodexPet cannot reliably inspect the Codex sidebar.
+Without Screen Recording permission, the new visual unread fallback cannot inspect visible blue dots and the app will fall back to AX-only heuristics.
 
 ## Scope
 
@@ -113,6 +119,7 @@ CodexPet/
 ├── LaunchAgents/    # Optional launch-on-login support
 ├── Scripts/         # Build and installation scripts
 ├── Sources/         # SwiftUI app, monitors, state aggregation
+├── Tests/           # Snapshot and detector tests
 └── Package.swift
 ```
 
@@ -132,6 +139,7 @@ That means most of the implementation effort goes into:
 - This project currently targets the macOS Codex desktop app only. It does not support Codex CLI as a primary integration surface.
 - Detection depends partly on Codex UI structure, so large upstream UI changes may break parts of the monitor.
 - Running-thread inference still combines multiple heuristics and may need recalibration across Codex versions.
+- Blue-dot unread detection is most accurate only after Screen Recording permission is granted. Without it, the app falls back to less reliable AX-only unread inference.
 - Reinstalling or replacing `CodexPet.app` may cause macOS Accessibility permission to reset. When that happens, the `AX` chip will turn `Off` and sidebar-based unread detection will stop being trustworthy until permission is granted again.
 - The app is currently optimized around my own Codex workflow and desktop layout.
 
